@@ -1,0 +1,4 @@
+.claude/
+test/*
+!test/serve.py
+node_modules/

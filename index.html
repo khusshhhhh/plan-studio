@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plan Studio</title>
+  <meta name="description" content="Upload a house plan (DWG, DXF or PDF) and get an interactive 3D walkthrough with every finish selectable.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="importmap">
+  { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  } }
+  </script>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand"><div class="logo">PS</div><div class="bt"><b>Plan Studio</b><input id="projName" value="New house" spellcheck="false" title="Project name"></div></div>
+    <nav id="steps">
+      <button data-step="upload" class="active"><i>1</i>Upload plans</button>
+      <button data-step="review" disabled><i>2</i>Check the plan</button>
+      <button data-step="design" disabled><i>3</i>Choose options</button>
+      <button data-step="walk" disabled><i>4</i>3D walkthrough</button>
+    </nav>
+    <div class="topright">
+      <span id="saveState" class="muted"></span>
+      <div class="menu"><button class="chip" id="projBtn">Projects ▾</button><div class="dropdown" id="projMenu" hidden></div></div>
+      <div class="menu"><button class="chip" id="exportBtn" disabled>Export ▾</button><div class="dropdown" id="exportMenu" hidden>
+        <button data-exp="schedule">Selections &amp; door/window schedule (print / PDF)</button>
+        <button data-exp="glb">3D model (.glb)</button>
+        <button data-exp="shot">Screenshot (.png)</button>
+        <button data-exp="json">Project file (.json)</button>
+      </div></div>
+    </div>
+  </header>
+
+  <!-- 1. Upload -->
+  <section id="screen-upload" class="screen active">
+    <div class="upwrap">
+      <div id="drop" class="drop">
+        <div class="dropicon">⬆</div>
+        <b>Drop your house plans here</b>
+        <span>DWG, DXF or PDF — floor plan, and optionally the electrical layout &amp; elevations. Upload the CAD and PDF together for the best result.</span>
+        <label class="btn primary">Choose files<input type="file" id="fileIn" multiple accept=".dwg,.dxf,.pdf" hidden></label>
+        <small class="muted">Files are read in your browser – nothing is uploaded to a server.</small>
+      </div>
+      <div id="upStatus" hidden>
+        <h3>Reading your drawings</h3>
+        <div id="upLog" class="log"></div>
+        <div id="upCands"></div>
+      </div>
+      <div id="recent"></div>
+    </div>
+  </section>
+
+  <!-- 2. Review -->
+  <section id="screen-review" class="screen">
+    <div class="tools" id="tools">
+      <button data-tool="select" class="active" title="Select & edit (click); drag empty space to pan; scroll to zoom">↖<span>Select</span></button>
+      <button data-tool="wall" title="Draw a wall (drag)">▭<span>Wall</span></button>
+      <button data-tool="door" title="Click a wall to add a door">🚪<span>Door</span></button>
+      <button data-tool="win" title="Click a wall to add a window">🪟<span>Window</span></button>
+      <button data-tool="slider" title="Click a wall to add a sliding door">⇆<span>Slider</span></button>
+      <button data-tool="garage" title="Click a wall to add a garage door">▤<span>Garage</span></button>
+      <button data-tool="arch" title="Click a wall to add an opening">⌓<span>Opening</span></button>
+      <hr>
+      <button id="undoBtn" title="Undo (Ctrl+Z)">↶<span>Undo</span></button>
+      <button id="fitBtn" title="Fit to view">⤢<span>Fit</span></button>
+      <button data-tool="calibrate" id="calBtn" title="Fix the scale: click two points a known distance apart">📏<span>Scale</span></button>
+    </div>
+    <div class="planwrap"><canvas id="plan"></canvas>
+      <div class="planbar">
+        <label><input type="checkbox" id="ovT" checked> Original drawing</label>
+        <input type="range" id="ovA" min="0.1" max="1" step="0.05" value="0.55">
+        <span class="legend"><i style="background:#202226"></i>External <i style="background:#6d737c"></i>Internal <i style="background:#8a5a00"></i>Added <i style="background:#ff8a00"></i>Door <i style="background:#1aa3ff"></i>Window <i style="background:#00b36b"></i>Slider <i style="background:#e6b800"></i>Garage <i style="background:#b04bff"></i>Opening</span>
+        <label>New wall <select id="wallT"><option value="90">90 mm</option><option value="110">110 mm</option><option value="190">190 mm</option><option value="230">230 mm</option><option value="270">270 mm</option></select></label>
+      </div>
+    </div>
+    <aside class="side" id="reviewSide">
+      <div class="card" id="summary"></div>
+      <div class="card"><h4>Selected</h4><div id="insp2d"></div></div>
+      <button class="btn primary big" id="toDesign">Looks right – choose options →</button>
+    </aside>
+  </section>
+
+  <!-- 3/4. Studio -->
+  <section id="screen-studio" class="screen">
+    <div id="viewbar">
+      <div id="modes">
+        <button data-mode="exterior" class="active">Exterior</button>
+        <button data-mode="plan">Floor plan</button>
+        <button data-mode="roof">Roof</button>
+        <button data-mode="electrical">Electrical</button>
+        <button data-mode="walk">Walk through</button>
+      </div>
+      <div id="views"></div>
+      <span class="grow"></span>
+      <span id="fps" class="muted"></span>
+      <button class="chip" id="hqBtn" title="High quality: ambient occlusion, 4K shadows">HQ</button>
+    </div>
+    <div class="studio">
+      <main id="stage"></main>
+      <aside class="side" id="studioSide">
+        <div class="ptabs" id="ptabs">
+          <button data-panel="options" class="active">Options</button>
+          <button data-panel="inspect">Edit element</button>
+          <button data-panel="sun">Sun</button>
+          <button data-panel="measure">Measure</button>
+        </div>
+        <div class="pbody" id="panel-options"></div>
+        <div class="pbody" id="panel-inspect" hidden>
+          <label class="row"><input type="checkbox" id="inspT" checked> Click in 3D to select (off = click opens doors)</label>
+          <div id="insp3d"></div>
+        </div>
+        <div class="pbody" id="panel-sun" hidden></div>
+        <div class="pbody" id="panel-measure" hidden></div>
+      </aside>
+      <div id="hud">
+        <div id="crosshair"></div>
+        <div id="roomName"></div>
+        <div id="hint" hidden></div>
+        <canvas id="minimap" width="230" height="200"></canvas>
+        <div id="help">WASD move · Shift run · Space jump · C crouch · E / click interact · F torch · L lights · N night · M map · Esc release</div>
+      </div>
+      <div id="playOverlay" hidden><div class="play"><div class="pbig">▶</div><b>Click to walk through</b><span>Mouse to look · WASD to move · E to open doors &amp; switch lights · Esc to release</span></div></div>
+      <div id="buildMs" class="muted"></div>
+    </div>
+  </section>
+
+  <div id="toast" hidden></div>
+  <div id="busy" hidden><div class="spin"></div><b id="busyMsg">Working…</b></div>
+</div>
+<script type="module" src="js/app.js"></script>
+<script>if (location.protocol === 'file:') document.body.insertAdjacentHTML('afterbegin', '<div style="position:fixed;inset:0;z-index:99;background:#16191e;color:#fff;display:grid;place-items:center;padding:24px;font:15px Inter,Arial">Please open this app through a web server (for example run <code>python -m http.server</code> in this folder and visit http://localhost:8000).</div>');</script>
+</body>
+</html>
